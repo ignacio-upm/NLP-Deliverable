@@ -1,0 +1,151 @@
+---
+title: "Ignacio Encinas- NLP IS Deliverable"
+output: html_notebook
+---
+The following deliverable is my personal attempt at document classification. I have taken hands-on 2.3 as the baseline and applied it to the example presented in class: spam email detection. Utilising the dataset available at https://kharshit.github.io/assets/emails.csv, I will create my own corpus to perform some data classification with a couple different methodologies. The CRAN documentation at https://cran.r-project.org/web/packages/quanteda.textmodels/quanteda.textmodels.pdf was also some great help.  
+
+First, we load all the libraries that we will be using:
+```{r}
+library(quanteda)
+library(tm)
+library(quanteda.textmodels)
+library(caret) 
+library(caTools)
+library(rpart)
+library(rpart.plot)
+library(class)
+```
+
+Import the email dataset, create the corpus and the document term matrix from its tokens.  
+```{r}
+df = read.csv("/Users/nacho/Desktop/MUII 2021-2022/Intelligent Systems/emails.csv")
+corp <- corpus(df,text_field = "text")
+dfmat <- dfm(tokens(corp,split_hyphens = TRUE,
+    remove_numbers = TRUE,
+    remove_punct = TRUE,
+    remove_symbols = TRUE,
+    include_docvars = TRUE))
+```
+  
+Divide our dataset into a train set and a test set utilising the 1/3 approach and setting a seed prior for reproducible results.
+```{r}
+set.seed(1)
+dfmat$spam = as.factor(dfmat$spam) #transform to factor required for ConfusionMatrix function
+spl = sample.split(dfmat$spam, 0.7)
+dfmat_train <- dfm_subset(dfmat, spl)
+dfmat_test <- dfm_subset(dfmat, !spl)
+
+```
+  
+**NAIVE BAYES (MULTINOMIAL)**
+```{r}
+set.seed(1)
+  multi <- textmodel_nb(dfmat_train, dfmat_train$spam,
+distribution = "multinomial")
+  pred <- predict(multi,newdata = dfmat_test)
+  confM <- confusionMatrix(pred, docvars(dfmat_test)$spam)
+  my_acc_coincidences <- sum(as.character(pred) == as.character(docvars(dfmat_test)$spam))
+  my_acc <- my_acc_coincidences/(length(as.character(pred)))
+  my_acc
+  precision <- confM$byClass['Pos Pred Value']
+  precision
+  recall <- confM$byClass['Sensitivity']
+  recall
+  list(acc = my_acc, p = precision, r = recall)
+  confM
+
+```
+Already out of the bat we get some spectacular results with an accuracy of 0.9895227 and a quite decent confusion matrix with more false positives than false negatives, which in my opinion probably works best, as id rather get an actual email im waiting for in my spam folder than getting some weird email from a "trustable" sender at first glance, get tricked or confused by it, click on some random link and end up with a not so happy ending...  
+
+
+**NAIVE BAYES (BERNOULLI FUNCTION)**  
+```{r}
+set.seed(1)
+  bern <- textmodel_nb(dfmat_train, dfmat_train$spam,
+distribution = "Bernoulli")
+  pred <- predict(bern,newdata = dfmat_test)
+  confM <- confusionMatrix(pred, docvars(dfmat_test)$spam)
+  my_acc_coincidences <- sum(as.character(pred) == as.character(docvars(dfmat_test)$spam))
+  my_acc <- my_acc_coincidences/(length(as.character(pred)))
+  my_acc
+  precision <- confM$byClass['Pos Pred Value']
+  precision
+  recall <- confM$byClass['Sensitivity']
+  recall
+  list(acc = my_acc, p = precision, r = recall)
+  confM
+```
+Performing slightly worse with an accuracy of 0.9866123 we have also a Naive Bayes approach but with the bernoulli function instead. While it may not be able to quite compete with the outstanding results from the firth method, it still manages to reach some amazing results with an even higher sensitivity of 0.9908257, and more balanced predictions having a similar number of false positives and negatives, which given some scenarios could push it over our firt attempt.  
+
+**SVM**
+```{r}
+set.seed(1)
+svm <- textmodel_svm(dfmat_train, dfmat_train$spam, weight = "uniform")
+pred <- predict(svm, newdata = dfmat_test)
+confM <- confusionMatrix(pred, docvars(dfmat_test)$spam)
+my_acc_coincidences <- sum(as.character(pred) == as.character(docvars(dfmat_test)$spam))
+my_acc <- my_acc_coincidences/(length(as.character(pred)))
+precision <- confM$byClass['Pos Pred Value']
+recall <- confM$byClass['Sensitivity']
+list(acc = my_acc, p = precision, r = recall)
+confM
+```
+The first two results were so astonishingly good that at this point we are just going on due to the nature of the project. With an accuracy, again slightly lower, at 0.9831199 this method still perfoms very well. While its sensitivity is also slightly lower, this would appear to be the worst method yet, even thought its results would otherwise be quite imppresive. However this raises and interesting question: given the similarities between svm and logistic regression, would there be a particularly great difference between both methods? So lets try that now:  
+
+
+
+  **LOGISTIC REGRESSION**
+```{r}
+set.seed(123)
+(lr <- textmodel_lr(dfmat, docvars(dfmat, "spam")))
+summary(lr)
+invisible(coef(lr))
+pred_prob<-predict(lr, type = "prob");
+pred<-predict(lr)
+confM <- confusionMatrix(pred, docvars(dfmat)$spam)
+my_acc_coincidences <- sum(as.character(pred) == as.character(docvars(dfmat)$spam))
+my_acc <- my_acc_coincidences/(length(as.character(pred)))
+precision <- confM$byClass['Pos Pred Value']
+recall <- confM$byClass['Sensitivity']
+list(acc = my_acc, p = precision, r = recall)
+confM
+```
+Well... it would appear if we thought our first model couldn't be beat, we were wrong. With an astonishing accuracy, even higher than our first naive-bayes model, and an incredible sensitivity of 1, given there are no false negatives, this would be our proverbial winner. Funny enough how the linear method ends up being the one that performs the best. Even with this last minute "plot twist" it is still impressive how good the performance of every other method was.    
+
+
+
+
+  **SOME CONCLUSIONS**  
+It is no surprise that this was presented in class as one of the examples of document classification as we could have literally picked any of the above methods and had some great results. While there may always be an infinite number of ways to tackle a problem, this seems to prove that starting in the right place, with the appropriate approach will always yield satisfying results. In the case of this particular problem: spam emails, it would seem to be NLP and document classification.
+
+  **EPILOGUE**  
+Lastly, I want to include the code for this two other classification methods outside of the quanteda package, even though i did not get them to run on my machine nor on escritorioUPM due to some performance issues, specifically related to memory allocation. However i still will keep them in this notebook as per future reference.
+
+  **K-NEAREST NEIGHBOURS**
+```{r}
+set.seed(1)
+knn_pred <- knn(dfmat_train, dfmat_test, cl=dfmat_train$spam, k=5)
+confM <- confusionMatrix(knn_pred, docvars(dfmat_test)$spam)
+my_acc_coincidences <- sum(as.character(knn_pred) == as.character(docvars(dfmat_test)$spam))
+my_acc_total <- length(as.character(knn_pred))
+my_acc <- my_acc_coincidences/my_acc_total
+precision <- confM$byClass['Pos Pred Value']
+recall <- confM$byClass['Sensitivity']
+list(acc = my_acc, p = precision, r = recall)
+```
+
+  **CLASSIFICATION TREE**
+```{r}
+set.seed(1)
+#dfmat_train_red<-dfm_sample(dfm_subset(dfmat_train), 1000) not even reducing the training set to a laughable size would it perform without an error(): protection stack overflow.
+tree <- rpart(spam~., data = dfmat_train, method = 'class')
+pred <- predict(tree, newdata = dfmat_test)
+confM <- confusionMatrix(pred, docvars(dfmat_test)$spam)
+my_acc_coincidences <- sum(as.character(pred) == as.character(docvars(dfmat_test)$spam))
+my_acc <- my_acc_coincidences/(length(as.character(pred)))
+precision <- confM$byClass['Pos Pred Value']
+recall <- confM$byClass['Sensitivity']
+list(acc = my_acc, p = precision, r = recall)
+#rpart.plot(fit, extra = 106)
+```
+
